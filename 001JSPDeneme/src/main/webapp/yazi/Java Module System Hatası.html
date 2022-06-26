@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="UTF-8">
+        <title>Java Module System</title>
+    </head>
+    <body>
+        <p>
+            Aldığım Hata:
+            Unable to make protected final java.lang.Class java.lang.ClassLoader.defineClass(java.lang.String,byte[],int,int,java.security.ProtectionDomain) throws java.lang.ClassFormatError accessible: module java.base does not "opens java.lang" to unnamed module @188715b5
+            <br>
+            StackOverFlow dan baktığım hata:
+            Unable to make protected final java.lang.Class java.lang.ClassLoader.defineClass(java.lang.String,byte[],int,int,java.security.ProtectionDomain) throws java.lang.ClassFormatError accessible: module java.base does not "opens java.lang" to unnamed module @1941a8ff
+            <br>
+            
+            
+            
+            
+            
+            Java 9 da başlatılan Java Platform module System den kaynaklanan bir hatadır.
+            <br>
+            particularly its implementation of strong encapsulation. It only allows access under certain conditions, the most prominent ones are:
+              <br>(Yandex Çeviri)<br>
+            özellikle güçlü kapsüllemenin(1) uygulanması. Yalnızca belirli koşullar altında erişime izin verir, en belirgin olanları şunlardır:
+            <br>
+            the type has to be public
+            the owning package has to be exported
+            <br>
+            Tip public olmalıdır
+            Sahip olunan paket dışa aktarılmış olmalı(?)
+            <br>
+            The same limitations are true for reflection, which the code causing the exception tried to use. More precisely the exception is caused by a call to setAccessible. This can be seen in the stack trace above, where the corresponding lines in javassist.util.proxy.SecurityActions look as follows:
+            <br>
+            aynı sınırlamalar, istisnaya neden olan kodun kullanmaya çalıştığı yansıma için de geçerlidir. Daha doğrusu istisna, setAccessible çağrısından kaynaklanır. Bu, javassist.util.proxy.SecurityActions içindeki karşılık gelen satırların aşağıdaki gibi göründüğü yukarıdaki yığın izlemesinde görülebilir:
+            <br>
+            
+            
+            static void setAccessible(final AccessibleObject ao, final boolean accessible) {<br>
+                if (System.getSecurityManager() == null)<br>
+                    ao.setAccessible(accessible); // ~ Dragons<br>
+                else {<br>
+                    AccessController.doPrivileged(new PrivilegedAction() {<br>
+                        public Object run() {<br>
+                            ao.setAccessible(accessible);  // ~ moar Dragons<br>
+                            return null;<br>
+                        }<br>
+                    });<br>
+                }<br>
+            }<br>
+            
+            
+            To make sure the program runs successfully the module system must be convinced to allow access to the element on which setAccessible was called. All information required for that is contained in the exception message but there are a number of mechanisms to achieve this. Which is the best one depends on the exact scenario that caused it.
+            <br>
+            Programın başarılı bir şekilde çalıştığından emin olmak için modül sisteminin setAccessible çağrıldığı öğeye erişime izin vermesi için ikna edilmesi gerekir. Bunun için gereken tüm bilgiler istisna mesajında bulunur, ancak bunu başarmak için bir takım mekanizmalar vardır. Hangisi en iyisi, buna neden olan senaryoya bağlı.
+            <br>
+            
+            By far the most prominent scenarios are the following two:
+            Şimdiye kadar en göze çarpan senaryolar aşağıdaki ikisidir:
+            <br>
+            
+            
+            Unable to make {member} accessible: module {A} does not 'opens {package}' to {B}
+            <br>
+            1- A library or framework uses reflection to call into a JDK module. In this scenario:
+            <br>
+            {A} is a Java module (prefixed with java. or jdk.)
+            {member} and {package} are parts of the Java API
+            {B} is a library, framework, or application module; often unnamed module @...
+            <br>
+            2- A reflection-based library/framework like Spring, Hibernate, JAXB, ... reflects over application code to access beans, entities,... In this scenario:
+            <br>
+            {A} is an application module
+            {member} and {package} are part of the application code
+            {B} is either a framework module or unnamed module @...
+            Note that some libraries (JAXB, for example) can fail on both accounts so have a close look at what scenario you're in! The one in the question is case 1.
+            <br>
+            
+            {Üye} erişilebilir hale getirilemiyor: {A} modülü {B} 'ye '{paket}' açmıyor
+            <br>
+            1- Bir kitaplık veya çerçeve, bir JDK modülüne çağırmak için yansıma kullanır. Bu senaryoda:
+            <br>
+            {A} bir Java modülüdür (java ile öneki. ya da jdk.)
+            {member} ve {package} Java apı'sinin parçalarıdır
+            {B} bir kitaplık, çerçeve veya uygulama modülüdür; genellikle adsız modül @...
+            <br>
+            2- Spring, Hibernate, JAXB, gibi yansıma tabanlı bir kütüphane / çerçeve... fasulyelere, varlıklara erişmek için uygulama kodunu yansıtır... Bu senaryoda:
+            <br>
+            {A} bir uygulama modülüdür
+            {üye} ve {paket} uygulama kodunun bir parçasıdır
+            {B} bir çerçeve modülü veya adsız modüldür @...
+            <br>
+            Bazı kitaplıkların (örneğin JAXB) her iki hesapta da başarısız olabileceğini unutmayın, bu nedenle hangi senaryoda olduğunuza yakından bakın! Söz konusu olan durum 1'dir.
+            Bende ki Hata Çok büyük ihtimalle 1. senaryo
+            <br>
+            1. Reflective Call Into JDK
+            <br>
+            The JDK modules are immutable for application developers so we can not change their properties. This leaves only one possible solution: command line flags. With them it is possible to open specific packages up for reflection.
+            <br>
+            JDK modülleri uygulama kodlayıcıları için değiştirilemez nesnelerdir bu yüzden modüllerin özellikleri değiştirilemez. Bu tek mümkün bir çözüm sunmaktadır: command line flags. Onlarla birlikte, yansıma için belirli paketleri açmak mümkündür.
+            <br>
+            So in a case like above (shortened)...
+            <br>
+            Unable to make java.lang.ClassLoader.defineClass accessible: module java.base does not "opens java.lang" to unnamed module @1941a8ff
+            <br>
+            the correct fix is to launch the JVM as follows:
+            # --add-opens has the following syntax: {A}/{package}={B}
+            java --add-opens java.base/java.lang=ALL-UNNAMED
+            <br>
+            Bu biçimde gelmiş bir hata için(Kısaltılmıştır):
+            <br>
+            Unable to make java.lang.ClassLoader.defineClass accessible: module java.base does not "opens java.lang" to unnamed module @1941a8ff
+            <br>
+            Doğru çözüm yolu JVM'yi aşağdaki giib çalıştırmaktır:
+            <br>
+            # --add-opens has the following syntax: {A}/{package}={B}
+            java --add-opens java.base/java.lang=ALL-UNNAMED
+            <br>
+            Note that it can sometimes be hard to find a way to apply this flag to the JVM that will actually execute the reflecting code. This can be particularly tough if the code in question is part of the project's build process and is executed in a JVM that the build tool spawned.
+            <br>
+            Bu bayrağı, yansıtan kodu gerçekten yürütecek olan jvm'ye uygulamanın bir yolunu bulmanın bazen zor olabileceğini unutmayın. Söz konusu kod, projenin oluşturma işleminin bir parçasıysa ve oluşturma aracının oluşturduğu bir jvm'de yürütülürse, bu özellikle zor olabilir.
+            <br>
+            If there are too many flags to be added, you might consider using the encapsulation kill switch --permit-illegal-access instead. It will allow all code on the classpath to reflect overall named modules. Note that this flag will only work in Java 9!
+            <br>
+            Eklenecek çok fazla bayrak varsa, kapsülleme kill anahtarını kullanmayı düşünebilirsiniz --allow-illegal-access bunun yerine. Sınıf yolundaki tüm kodların genel adlandırılmış modülleri yansıtmasına izin verir. Bu bayrağın yalnızca Java 9'da çalışacağını unutmayın!
+            <br>
+            
+            --permit-illegal-access -java.lang=ALL-UNNAMED Bu kou-du çalıştırmaya çalış.
+        </p>
+    </body>
+</html>
+
